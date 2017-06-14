@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using CinemaChecker.CinemaCity;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,49 +10,35 @@ namespace CinemaChecker
 {
     class CinemaChecker
     {
-        const string MovieListUrl = "https://www.cinema-city.pl/loadFunction?layoutId=10&layerId=1&exportCode=movies_filter";
-        const string PresentationUrl = "https://www.cinema-city.pl/presentationsJSON";
-        const string PortfolioXPath = "//*[@id='categoryfeatures_portfolio']";
-        const string NodeClass = ".//li[contains(@class,'cat_0')]/a[@class ='featureInfo']";
-
-        CinemaListing listings = null;
+        const string PosterUrl = "https://cinema-city.pl/getPosters?filter=%7B%22hideNoImageFeatures%22:false%7D";
+        const string SitesUrl = "https://cinema-city.pl/pgm-sites";
 
         public CinemaChecker()
         {
-            PresentationTask = Program.GetRawStringAsync(PresentationUrl);
-            MovieListTask = Program.GetRawStringAsync(MovieListUrl);
+            SitesTask = Program.GetRawStringAsync(SitesUrl)
+                .ContinueWith(t =>
+                {
+                    return JsonConvert.DeserializeObject<List<CinemaSite>>(t.Result);
+                });
+            PostersTask = Program.GetRawStringAsync(PosterUrl)
+                .ContinueWith(t =>
+                {
+                    return JsonConvert.DeserializeObject<PostersRequest>(t.Result);
+                });
         }
 
-        public IEnumerable<MovieInfo> GetMovies()
+        public List<CinemaSite> GetSites()
         {
-            var Page = new HtmlAgilityPack.HtmlDocument();
-            Page.LoadHtml(MovieListTask.Result);
-            var node = Page.DocumentNode.SelectSingleNode(PortfolioXPath);
-            var tests = node?.SelectNodes(NodeClass);
-            foreach (var test in tests)
-            { 
-                yield return new MovieInfo(test);
-            }
+            SitesTask.Wait();
+            return SitesTask.Result;
+        }
+        public List<PosterInfo> GetPosters()
+        {
+            PostersTask.Wait();
+            return PostersTask.Result.Posters;
         }
 
-        private void Up()
-        {
-            if (listings == null)
-                listings = JsonConvert.DeserializeObject<CinemaListing>(PresentationTask.Result);
-        }
-
-        public List<CinemaListing.CinemaSite> GetSites()
-        {
-            Up();
-            return listings.Sites;
-        }
-
-        public CinemaListing GetData()
-        {
-            Up();
-            return listings;
-        }
-        
-        Task<string> MovieListTask, PresentationTask;
+        Task<PostersRequest> PostersTask;
+        Task<List<CinemaSite>> SitesTask;
     }
 }

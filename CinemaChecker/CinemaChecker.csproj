@@ -66,9 +66,12 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ChatPreferences.cs" />
     <Compile Include="CinemaChecker.cs" />
-    <Compile Include="CinemaListing.cs" />
-    <Compile Include="MovieInfo.cs" />
+    <Compile Include="CinemaCity\PostersRequest.cs" />
+    <Compile Include="CinemaCity\PresentationsRequest.cs" />
+    <Compile Include="CinemaCity\SitesRequest.cs" />
+    <Compile Include="Extensions.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TelegramManager.cs" />

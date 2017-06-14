@@ -1,4 +1,5 @@
-﻿using System;
+﻿using CinemaChecker.CinemaCity;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -17,6 +18,7 @@ namespace CinemaChecker
         TelegramBotClient bot = new TelegramBotClient(System.IO.File.ReadAllText("../../Telegram_ApiToken.txt"));
         Dictionary<string, HashSet<long>> ChatTrackedSites = new Dictionary<string, HashSet<long>>();
         Dictionary<string, HashSet<Regex>> ChatTrackedTitles = new Dictionary<string, HashSet<Regex>>();
+        Dictionary<string, ChatPreferences> ChatSettings = new Dictionary<string, ChatPreferences>();
         CinemaChecker checker = new CinemaChecker();
         internal Task<User> MeResult = null;
 
@@ -48,9 +50,11 @@ namespace CinemaChecker
             if (!string.IsNullOrEmpty(callback.InlineMessageId))
             {
                 if (callback.Data == "Nay")
-                    Bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, string.Format("Denied by {0}!", 
+                { 
+                    Bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, string.Format("Denied by {0}!",
                         string.IsNullOrEmpty(callback.From.Username) ? callback.From.FirstName : callback.From.Username)
                         );
+                }
                 else
                 {
                     if (ChatTrackedSites.ContainsKey(callback.From.Id))
@@ -59,13 +63,13 @@ namespace CinemaChecker
                         List<string> DatesMessage = new List<string>();
                         foreach (var trackedsite in ChatTrackedSites[callback.From.Id])
                         {
-                            var site = sites.Single(s => s.SiteID == trackedsite);
-                            var presents = site.Features
-                                .SingleOrDefault(feat => feat.DisplayCode == callback.Data)
-                                ?.Presentations.Where(pres => pres.IsDubbing == false);
+                            var site = sites.Single(s => s.Id == trackedsite);
+                            //var presents = site
+                            //    .SingleOrDefault(feat => feat.DisplayCode == callback.Data)
+                            //    ?.Presentations.Where(pres => pres.IsDubbing == false);
 
-                            foreach(var pres in presents)
-                                DatesMessage.Add(pres.ToHtml(trackedsite));
+                            //foreach(var pres in presents)
+                            //    DatesMessage.Add(pres.ToHtml(trackedsite));
                         }
                         if (DatesMessage.Count > 0)
                         {
@@ -156,12 +160,12 @@ namespace CinemaChecker
                         case "/registercinema":
                             AddTrackedChat(msg.Chat.Id);
 
-                            var cinemas = checker.GetData();
-                            var sites = cinemas.Sites
-                                .OrderByDescending(site => site.SiteName.Contains("Kraków"))
-                                .ThenBy(site => site.SiteName);
+                            var cinemas = checker.GetSites();
+                            var sites = cinemas
+                                .OrderByDescending(site => site.Name.Contains("Kraków"))
+                                .ThenBy(site => site.Name);
 
-                            var buttons = sites.Select(site => new[] { new KeyboardButton(site.SiteName) });
+                            var buttons = sites.Select(site => new[] { new KeyboardButton(site.Name) });
                             Bot.SendTextMessageAsync(msg.Chat.Id, BOT_SelectPreferedSite,
                                 replyToMessageId: msg.MessageId,
                                 replyMarkup: new ReplyKeyboardMarkup
@@ -216,7 +220,7 @@ namespace CinemaChecker
                 return;
             }
 
-            var movies = checker.GetMovies()
+            var movies = checker.GetPosters()
                 .Where(movie => movie.Title.Contains(e.InlineQuery.Query));
 
             if (movies.Any())
@@ -234,7 +238,7 @@ namespace CinemaChecker
                         {
                             new []
                             {
-                                new InlineKeyboardButton("Yay", movie.FeatureCode),
+                                new InlineKeyboardButton("Yay", movie.Code),
                                 new InlineKeyboardButton("Nay", "Nay")
                             }
                         }
@@ -257,9 +261,9 @@ namespace CinemaChecker
         
         private void TrySite(ref Message msg)
         {
-            if (TryTrackSite(msg.Text, out CinemaListing.CinemaSite found))
+            if (TryTrackSite(msg.Text, out CinemaSite found))
             {
-                AddTrackedChat(msg.Chat.Id, found.SiteID);
+                AddTrackedChat(msg.Chat.Id, found.Id);
                 Bot.SendTextMessageAsync(msg.Chat.Id, "Selected and saved: " + msg.Text,
                     replyToMessageId: msg.ReplyToMessage != null ? msg.ReplyToMessage.MessageId : 0,
                     replyMarkup: new ReplyKeyboardRemove());
@@ -275,37 +279,53 @@ namespace CinemaChecker
                     replyMarkup: new ReplyKeyboardRemove());
             }
         }
-        private bool TryTrackSite(string Name, out CinemaListing.CinemaSite foundsite)
+        private bool TryTrackSite(string Name, out CinemaSite foundsite)
         {
             foundsite = checker.GetSites()
-                .SingleOrDefault(site => site.SiteName == Name);
+                .SingleOrDefault(site => site.Name == Name);
             return foundsite != null;
+        }
+
+        private ChatPreferences GetInitChatSettings(ChatId ChatID)
+        {
+            ChatPreferences prefs = new ChatPreferences();
+            if (!ChatSettings.ContainsKey(ChatID))
+                ChatSettings.Add(ChatID, prefs);
+
+            return prefs;
+        }
+        private ChatPreferences GetChatSettings(ChatId ChatID)
+        {
+            if (!ChatSettings.TryGetValue(ChatID, out var Value))
+                return Value;
+
+            return null;
         }
         private void AddTrackedChat(ChatId ChatID, long siteId = 0)
         {
-            if (!ChatTrackedSites.ContainsKey(ChatID))
-                ChatTrackedSites.Add(ChatID, new HashSet<long>());
+            var prefs = GetInitChatSettings(ChatID);
 
             if (siteId != 0)
-                ChatTrackedSites[ChatID].Add(siteId);
+                prefs.Add(siteId);
         }
         private void AddTrackedTitle(ChatId ChatID, Regex titleRegex = null)
         {
-            if (!ChatTrackedTitles.ContainsKey(ChatID))
-                ChatTrackedTitles.Add(ChatID, new HashSet<Regex>());
+            var prefs = GetInitChatSettings(ChatID);
 
             if (titleRegex != null)
-                ChatTrackedTitles[ChatID].Add(titleRegex);
+                prefs.Add(titleRegex);
         }
         private void ShowTrackedSites(ChatId ChatID, int MessageID)
         {
             List<InlineKeyboardButton[]> TrackedNames = new List<InlineKeyboardButton[]>();
-            if (ChatTrackedSites.ContainsKey(ChatID))
+            if (ChatSettings.TryGetValue(ChatID, out ChatPreferences preferences))
             {
-                TrackedNames.AddRange(checker.GetSites()
-                    .Where(site => ChatTrackedSites[ChatID].Contains(site.SiteID))
-                    .Select(site => new[] { new InlineKeyboardButton(site.SiteName, site.SiteID.ToString()) })
-                    );
+                TrackedNames.AddRange(from s in checker.GetSites()
+                                      where preferences.Contains(s.Id)
+                                      select new[]
+                                      {
+                                          new InlineKeyboardButton(s.Name, s.Id.ToString())
+                                      });
             }
             TrackedNames.Add(new[] { new InlineKeyboardButton("Go back to settings", "bot_showsettings") });
             Bot.EditMessageTextAsync(ChatID, MessageID, "Those are your registered cinema sites. If you'd like to remove one, just click on it.",
