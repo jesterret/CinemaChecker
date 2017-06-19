@@ -10,35 +10,32 @@ namespace CinemaChecker
 {
     class CinemaChecker
     {
-        const string PosterUrl = "https://cinema-city.pl/getPosters?filter=%7B%22hideNoImageFeatures%22:false%7D";
-        const string SitesUrl = "https://cinema-city.pl/pgm-sites";
-
-        public CinemaChecker()
+        public List<Site> GetSites()
         {
-            SitesTask = Program.GetRawStringAsync(SitesUrl)
-                .ContinueWith(t =>
-                {
-                    return JsonConvert.DeserializeObject<List<CinemaSite>>(t.Result);
-                });
-            PostersTask = Program.GetRawStringAsync(PosterUrl)
-                .ContinueWith(t =>
-                {
-                    return JsonConvert.DeserializeObject<PostersRequest>(t.Result);
-                });
+            return Sites.Get();
+        }
+        public List<Poster> GetPosters()
+        {
+            return Posters.Get().Posters;
+        }
+        public List<SiteFeatures>  GetFeatured(string SeanceID = null)
+        {
+            FeaturingSitesList req = null;
+            if (SeanceID != null)
+                req = new FeaturingSitesList(SeanceID);
+            else
+                req = new FeaturingSitesList();
+
+            return req.Get();
         }
 
-        public List<CinemaSite> GetSites()
+        public List<SeanceInfo> GetCinemaSeances(long SiteID)
         {
-            SitesTask.Wait();
-            return SitesTask.Result;
-        }
-        public List<PosterInfo> GetPosters()
-        {
-            PostersTask.Wait();
-            return PostersTask.Result.Posters;
+            var list = new SeanceList(SiteID);
+            return list.Get();
         }
 
-        Task<PostersRequest> PostersTask;
-        Task<List<CinemaSite>> SitesTask;
+        PosterList Posters = new PosterList();
+        SiteList Sites = new SiteList();
     }
 }

@@ -1,20 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using Telegram.Bot.Types;
 
 namespace CinemaChecker
 {
     public class PreferenceWeights : System.IComparable
     {
-        int WeightIMAX = 0;
-        int Weight4DX = 0;
-        int Weight3D = 0;
-        int WeightSubs = 0;
-        int WeightDub = 0;
+        public int WeightIMAX = 5;
+        public int Weight4DX = 4;
+        public int Weight3D = 3;
+        public int WeightSubs = 2;
+        public int WeightDub = 0;
         public int CompareTo(object obj)
         {
             return 0;
@@ -27,29 +23,42 @@ namespace CinemaChecker
 
         }
 
-        public void Add(long siteId)
+        public bool Add(long siteId)
         {
-            TrackedSites.Add(siteId);
+            return Sites.Add(siteId);
         }
-        public void Add(Regex titleRegex)
+        public bool Add(Regex titleRegex)
         {
-            TrackedTitles.Add(titleRegex);
+            return Titles.Add(titleRegex);
+        }
+        public bool Remove(long siteId)
+        {
+            return Sites.Remove(siteId);
+        }
+        public bool Remove(Regex titleRegex)
+        {
+            return Titles.Remove(titleRegex);
         }
         public bool Contains(long siteId)
         {
-            return TrackedSites.Contains(siteId);
+            return Sites.Contains(siteId);
         }
         public bool Contains(Regex titleRegex)
         {
-            return TrackedTitles.Contains(titleRegex);
+            return Titles.Contains(titleRegex);
         }
-        public HashSet<long> GetSites()
+        public bool Contains(string title)
         {
-            return TrackedSites;
+            foreach(var Title in Titles)
+            {
+                if (Title.IsMatch(title))
+                    return true;
+            }
+            return false;
         }
 
-        public PreferenceWeights Weights;
-        HashSet<long> TrackedSites = new HashSet<long>();
-        HashSet<Regex> TrackedTitles = new HashSet<Regex>();
+        //        public PreferenceWeights Weights { get; } = new PreferenceWeights();
+        public HashSet<long> Sites { get; } = new HashSet<long>();
+        public HashSet<Regex> Titles { get; } = new HashSet<Regex>();
     }
 }

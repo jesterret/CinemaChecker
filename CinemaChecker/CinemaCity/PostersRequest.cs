@@ -7,10 +7,12 @@ using System.Threading.Tasks;
 
 namespace CinemaChecker.CinemaCity
 {
-    class PosterInfo
+    public class Poster
     {
+#pragma warning disable CS0649 // Field 'Poster.PosterFile' is never assigned to, and will always have its default value null 
         [JsonProperty("posterSrc")]
-        private string Poster;
+        private string PosterFile;
+#pragma warning restore CS0649 // Field 'Poster.PosterFile' is never assigned to, and will always have its default value null 
         [JsonProperty("featureTitle")]
         public string Title { get; set; }
         [JsonProperty("code")]
@@ -18,18 +20,39 @@ namespace CinemaChecker.CinemaCity
         [JsonProperty("movieUrl")]
         public Uri TrailerUrl { get; private set; }
 
-        public string PosterImage => string.Format("https://n.cinema-city.pl/xmedia-cw/repo/feats/posters/{0}", Poster);
+        public string PosterImage => string.Format("https://cinema-city.pl/xmedia-cw/repo/feats/posters/{0}", PosterFile);
     }
-    class PostersRequestData
+    public class PostersRequestData
     {
         [JsonProperty("posters")]
-        public List<PosterInfo> Posters { get; private set; }
+        public List<Poster> PosterList { get; private set; }
     }
-    class PostersRequest
+    public class PostersRequest
     {
         [JsonProperty("data")]
-        private PostersRequestData Data { get; set; }
+        internal PostersRequestData Data { get; set; }
 
-        public List<PosterInfo> Posters => Data.Posters;
+        public List<Poster> Posters => Data.PosterList;
+    }
+
+    public class PosterList
+    {
+        const string PosterUrl = "https://cinema-city.pl/getPosters?filter=%7B%22hideNoImageFeatures%22:false%7D";
+
+        internal Task<PostersRequest> PosterReq;
+        public PosterList()
+        {
+            PosterReq = Program.GetRawStringAsync(PosterUrl)
+                .ContinueWith(t =>
+                {
+                    return JsonConvert.DeserializeObject<PostersRequest>(t.Result);
+                });
+        }
+
+        public PostersRequest Get()
+        {
+            PosterReq.Wait();
+            return PosterReq.Result;
+        }
     }
 }

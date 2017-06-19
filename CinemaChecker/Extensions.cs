@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.Contracts;
 using System.Linq;
 
 namespace CinemaChecker
@@ -28,6 +29,41 @@ namespace CinemaChecker
                 if (!order.ContainsKey(item)) order.Add(item, weighting(keySelector(item)));
             }
             return source.OrderBy(s => order[s]);
+        }
+        public static IEnumerable<TResult> SelectTwo<TSource, TResult>(this IEnumerable<TSource> source, Func<TSource, TSource, TResult> selector)
+        {
+            return source.Select((item, index) => new { item, index })
+            .GroupBy(x => x.index / 2)
+            .Select(g => g.Select(i => i.item).ToArray())
+            .Where(h => h.Count() == 2)
+            .Select(a => selector(a[0], a[1]));
+        }
+
+        public static IEnumerable<T[]> Partition<T>(this IEnumerable<T> sequence, int partitionSize)
+        {
+            Contract.Requires(sequence != null);
+            Contract.Requires(partitionSize > 0);
+
+            var buffer = new T[partitionSize];
+            var n = 0;
+            foreach (var item in sequence)
+            {
+                buffer[n] = item;
+                n += 1;
+                if (n == partitionSize)
+                {
+                    yield return buffer;
+                    buffer = new T[partitionSize];
+                    n = 0;
+                }
+            }
+            //partial leftovers
+            if (n > 0)
+            {
+                var retbuf = new T[n];
+                Array.Copy(buffer, retbuf, n);
+                yield return retbuf;
+            }
         }
     }
 }
