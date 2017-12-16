@@ -20,7 +20,7 @@ namespace CinemaChecker.CinemaCity
         [JsonProperty("movieUrl")]
         public Uri TrailerUrl { get; private set; }
 
-        public string PosterImage => string.Format("https://cinema-city.pl/xmedia-cw/repo/feats/posters/{0}", PosterFile);
+        public string PosterImage => string.Format("https://www.cinema-city.pl/xmedia-cw/repo/feats/posters/{0}", PosterFile);
     }
     public class PostersRequestData
     {
@@ -32,17 +32,17 @@ namespace CinemaChecker.CinemaCity
         [JsonProperty("data")]
         internal PostersRequestData Data { get; set; }
 
-        public List<Poster> Posters => Data.PosterList;
+        public List<Poster> Posters => Data?.PosterList;
     }
 
     public class PosterList
     {
-        const string PosterUrl = "https://cinema-city.pl/getPosters?filter=%7B%22hideNoImageFeatures%22:false%7D";
+        const string PosterUrl = "https://www.cinema-city.pl/getPosters?filter=%7B%22hideNoImageFeatures%22:false%7D";
 
         internal Task<PostersRequest> PosterReq;
         public PosterList()
         {
-            PosterReq = Program.GetRawStringAsync(PosterUrl)
+            PosterReq = Program.GetRawStringAsyncNoCache(PosterUrl)
                 .ContinueWith(t =>
                 {
                     return JsonConvert.DeserializeObject<PostersRequest>(t.Result);

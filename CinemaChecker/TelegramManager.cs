@@ -11,10 +11,12 @@ using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InlineQueryResults;
 using Telegram.Bot.Types.ReplyMarkups;
 using Newtonsoft.Json;
+using Telegram.Bot.Types.InputMessageContents;
+using Telegram.Bot.Types.InlineKeyboardButtons;
 
 namespace CinemaChecker
 {
-    class TelegramManager
+    class TelegramManager : IDisposable
     {
         TelegramBotClient bot = new TelegramBotClient(System.IO.File.ReadAllText("Telegram_ApiToken.txt"));
         Dictionary<string, ChatPreferences> ChatSettings;
@@ -24,10 +26,7 @@ namespace CinemaChecker
         public TelegramManager()
         {
             var DeserializedTest = ReadSettings();
-            if (DeserializedTest != null)
-                ChatSettings = DeserializedTest;
-            else
-                ChatSettings = new Dictionary<string, ChatPreferences>();
+            ChatSettings = DeserializedTest ?? new Dictionary<string, ChatPreferences>();
             
             bot.OnMessage += Bot_OnMessage;
             bot.OnInlineQuery += Bot_OnInlineQuery;
@@ -46,137 +45,66 @@ namespace CinemaChecker
         }
         ~TelegramManager()
         {
-            SaveSettings();
-            bot.StopReceiving();
+            Dispose(false);
         }
         
-        private void Bot_OnCallbackQuery(object sender, CallbackQueryEventArgs e)
+        private async void Bot_OnCallbackQuery(object sender, CallbackQueryEventArgs e)
         {
             if (bShouldIgnore)
             {
                 bShouldIgnore = false;
                 return;
             }
-
+            
             var callback = e.CallbackQuery;
+            var data = callback.Data.Split('|');
+            var cinema = Cinema.CinemaBase.GetCinema(data[0]);
             if (!string.IsNullOrEmpty(callback.InlineMessageId))
             {
-                var Params = callback.Data.Split('|');
-                if (Params[0] == "Nay")
-                { 
-                    bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, string.Format("Tough luck {0}!",
-                        string.IsNullOrEmpty(callback.From.Username) ? callback.From.FirstName : callback.From.Username),
-                        replyMarkup: new InlineKeyboardMarkup(new [] { new InlineKeyboardButton("Yay", Params[1]) }));
-                }
-                else if(Params.Length == 2)
+                if(data.Length == 3)
                 {
-                    var settings = GetChatSettings(callback.From.Id);
-                    if (settings != null && settings.Sites.Count > 0)
+                    InlineKeyboardButton[][] buttons = null;
+                    if(data[2] == "movies")
                     {
-                        var code = Params[0];
-                        var date = Params[1];
-                        var sites = checker.GetFeatured(code);
-                        foreach (var trackedsite in settings.Sites)
-                        {
-                            var site = sites.SingleOrDefault(s => s.Id == trackedsite);
-                            var sitetimes = site?.Features
-                                .SingleOrDefault(feat => feat.Date == date)
-                                ?.Presentations
-                                .Partition(2);
-                            var times = sitetimes
-                                .Select(pres =>
-                                {
-                                    return pres.Select(
-                                        x => new InlineKeyboardButton(string.Format("{0},{1}", x.Time, x.Tags), "")
-                                            {
-                                                Url = x.GetUrl(site.Id)
-                                            }
-                                        ).ToArray();
-                                }).ToList();
-                            times.Add(new[] { new InlineKeyboardButton("Go Back", Params[0]) });
-                            bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, "Select the time:", replyMarkup:
-                                new InlineKeyboardMarkup(times.ToArray()));
-                        }
+                        var movies = await cinema.GetRepertoir(data[1]);
                     }
-                }    
-                else // callback.Data == movie code
-                {
-                    var settings = GetChatSettings(callback.From.Id);
-                    if (settings != null && settings.Sites.Count > 0)
+                    else if(data[2] == "upcoming")
                     {
-                        var sites = checker.GetFeatured(callback.Data);
-                        List<string> DatesMessage = new List<string>();
-                        foreach (var trackedsite in settings.Sites)
-                        {
-                            var site = sites.SingleOrDefault(s => s.Id == trackedsite);
-                            site?.Features.ForEach(feat => DatesMessage.Add(feat.Date));
-                        }
-                        if (DatesMessage.Count > 0)
-                        {
-                            var buttons = DatesMessage
-                                .Partition(2)
-                                .Select(date =>
-                                    {
-                                        return date.Select(d => new InlineKeyboardButton(d, string.Format("{0}|{1}", Params[0], d))).ToArray();
-                                    }).ToList();
-                            buttons.Add(new[] { new InlineKeyboardButton("Refresh", callback.Data) });
-                            bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, "Select the date:", replyMarkup:
-                                new InlineKeyboardMarkup(buttons.ToArray()));
-                        }
-                        else
-                            bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, "Your prefered cinema site does not sell tickets for this movie.");
+                        var upcoming = await cinema.GetUpcoming(data[1]);
+                        buttons = upcoming
+                            .Select(up => new InlineKeyboardCallbackButton(up.Title, up.Id))
+                            .Partition(2)
+                            .ToArray();
+                        await bot.EditInlineMessageTextAsync(callback.InlineMessageId, "Here's the list of all upcoming seances");
                     }
-                    else
-                        bot.EditInlineMessageCaptionAsync(callback.InlineMessageId, $"{callback.From.Username} have not defined their prefered cinema site",
-                            new InlineKeyboardMarkup
-                            {
-                                InlineKeyboard = new[]
-                                {
-                                    new[]
-                                    {
-                                        new InlineKeyboardButton("Message me now!", "")
-                                        {
-                                            Url = string.Format("t.me/{0}?start=payload", BotUsername)
-                                        }
-                                    },
-                                    new[]
-                                    {
-                                        new InlineKeyboardButton("Try again", callback.Data)
-                                    }
-                                }
-                            });
+                    await bot.EditInlineMessageReplyMarkupAsync(callback.InlineMessageId, new InlineKeyboardMarkup(buttons));
                 }
-                bot.AnswerCallbackQueryAsync(callback.Id);
+                await bot.AnswerCallbackQueryAsync(callback.InlineMessageId);
             }
-            else if (callback.Message != null)
+            else if(callback.Message != null)
             {
-                var msg = callback.Message;
-                switch(callback.Data)
+                if (callback.Message.Text == Bot_SelectCinemaSystem)
                 {
-                    case "bot_showsettings":
-                        bot.EditMessageTextAsync(msg.Chat.Id, msg.MessageId, "You can view your current chat settings here.",
-                                replyMarkup: new InlineKeyboardMarkup(Bot_SettingsInlineKeyboard));
-                        break;
-                    case "bot_showsites":
-                        ShowTrackedSites(msg.Chat.Id, msg.MessageId);
-                        break;
-                    case "bot_showprefs":
-                        // TODO: Allow to specify and add sorting by chat preferences
-                        break;
-                    default:
-                        long sID = 0;
-                        if(long.TryParse(callback.Data, out sID))
-                        {
-                            ChatSettings[msg.Chat.Id].Remove(sID);
-                            ShowTrackedSites(msg.Chat.Id, msg.MessageId);
-                        }
-                        break;
+                    var sites = await Cinema.CinemaBase.GetCinema(data[0]).GetSites();
+                    bot.SendTextMessageAsync(callback.From.Id, Bot_SelectSite, replyMarkup: 
+                        new InlineKeyboardMarkup(sites
+                                        .Select(s => new InlineKeyboardCallbackButton(s.Name, $"{callback.Data}|{s.Id}"))
+                                        .Partition(2)
+                                        .ToArray()));
                 }
-                bot.AnswerCallbackQueryAsync(callback.Id);
+                else if(callback.Message.Text == Bot_SelectSite)
+                {
+                    var upcoming = await Cinema.CinemaBase.GetCinema(data[0]).GetUpcoming(data[1]);
+                    bot.SendTextMessageAsync(callback.From.Id, Bot_SelectSite, replyMarkup: 
+                        new ReplyKeyboardMarkup(upcoming
+                                        .Select(mov => new KeyboardButton(mov.Title))
+                                        .Partition(2)
+                                        .ToArray()));
+                }
             }
             return;
         }
-        private void Bot_OnMessage(object sender, MessageEventArgs e)
+        private async void Bot_OnMessage(object sender, MessageEventArgs e)
         {
             if(bShouldIgnore)
             {
@@ -185,88 +113,67 @@ namespace CinemaChecker
             }
 
             var msg = e.Message;
-            bot.SendTextMessageAsync(PrivateChatID, string.Format("{0}: {1}", msg.From.Username, msg.Text), disableNotification: true).Wait();
-
-            // bot commands handling
-            for (int i = 0; i < msg.Entities.Count; i++)
+            await bot.SendTextMessageAsync(PrivateChatID, $"{msg.From.Username}: {msg.Text}", disableNotification: true);
+            
+            if (msg.Chat.Type == ChatType.Private)
             {
-                var botcommand = msg.EntityValues[i];
-                if (msg.Entities[i].Type == MessageEntityType.BotCommand)
+                // bot commands handling
+                for (int i = 0; i < msg.Entities.Count; i++)
                 {
-
-                    // Verify whether the command is sent on chat with multiple bots
-                    // and is intended for our bot
-                    var command = botcommand.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (command.Length == 2 && command[1] != BotUsername)
-                        return;
-
-                    switch (command[0])
+                    var botcommand = msg.EntityValues[i];
+                    if (msg.Entities[i].Type == MessageEntityType.BotCommand)
                     {
-                        case "/start":
-                        case "/registercinema":
-                            AddTrackedChat(msg.Chat.Id);
+                        // Verify whether the command has appended bot username
+                        // and is intended for our bot
+                        var command = botcommand.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (command.Length == 2 && command[1] != BotUsername)
+                            return;
 
-                            var cinemas = checker.GetSites();
-                            var sites = cinemas
-                                .OrderByDescending(site => site.Name.Contains("Kraków")) // Hax to show closest sites first
-                                .ThenBy(site => site.Name);
+                        switch (command[0])
+                        {
+                            case "/start":
+                            case "/registercinema":
 
-                            var buttons = sites.Select(site => new[] { new KeyboardButton(site.Name) });
-                            bot.SendTextMessageAsync(msg.Chat.Id, Bot_SelectPreferedSite,
-                                replyToMessageId: msg.MessageId,
-                                replyMarkup: new ReplyKeyboardMarkup
+                                break;
+
+                            case "/registermovie":
+
+                                break;
+
+                            case "/upcoming":
+                                bot.SendTextMessageAsync(msg.Chat.Id, Bot_SelectCinemaSystem, replyMarkup: 
+                                                        new InlineKeyboardMarkup(Cinema.CinemaBase.CinemaSystems
+                                                        .Select(s => new InlineKeyboardCallbackButton(s.Value.GetType().Name, s.Key))
+                                                        .Partition(2)
+                                                        .ToArray()));
+                                break;
+
+                            case "/devbreakquitnow":
+                                if (msg.Chat.Id == PrivateChatID)
                                 {
-                                    Keyboard = buttons.ToArray(),
-                                    Selective = true
-                                });
-                            break;
-                        case "/registermovie":
-                            if (ChatSettings.ContainsKey(msg.Chat.Id))
-                                bot.SendTextMessageAsync(msg.Chat.Id, Bot_TypeMovieRegex,
-                                    replyToMessageId: msg.MessageId,
-                                    replyMarkup: new ForceReply() { Force = true, Selective = true });
-                            else
-                                bot.SendTextMessageAsync(msg.Chat.Id, "You have not registered any cinemas for this chat.");
-                            break;
-
-                        case "/settings":
-                            bot.SendTextMessageAsync(msg.Chat.Id, "You can view your current chat settings here.",
-                                replyMarkup: new InlineKeyboardMarkup()
-                                {
-                                    InlineKeyboard = Bot_SettingsInlineKeyboard
-                                });
-
-                            break;
-                        case "/devbreakquitnowit'snotreallythatone":
-                            bot.SendTextMessageAsync(PrivateChatID, "Quitting").Wait();
-                            SaveSettings();
-                            Environment.Exit(-1);
-                            break;
-                        default:
-                            SaveSettings();
-                            break;
+                                    bot.SendTextMessageAsync(PrivateChatID, "Quitting").Wait();
+                                    SaveSettings();
+                                    Program.ShouldQuit.Set();
+                                }
+                                break;
+                        }
                     }
                 }
-            }
 
-            // Keyboard responses handling
-            var parent = msg.ReplyToMessage;
-            if (parent != null)
-            {
-                if (msg.Chat.Type == ChatType.Group) // On group chat, privacy settings on
+                var parent = msg.ReplyToMessage;
+                if(parent != null)
                 {
-                    if (parent.Text == Bot_SelectPreferedSite)
-                        TrySite(ref msg);
-                    else
-                        TryTitle(ref msg);
+
                 }
-                else if(msg.Chat.Type == ChatType.Private)
-                    TryTitle(ref msg);
-            }    
-            else if (msg.Chat.Type == ChatType.Private && msg.Entities.Count == 0)
-                TrySite(ref msg);
+                else if (msg.Entities.Count == 0)
+                {
+                    var del = await bot.SendTextMessageAsync(msg.Chat.Id, "Clearing reply keyboard", replyMarkup: new ReplyKeyboardRemove());
+                    bot.DeleteMessageAsync(msg.Chat.Id, del.MessageId);
+                    return;
+                }
+            } 
         }
-        private void Bot_OnInlineQuery(object sender, InlineQueryEventArgs e)
+        private async void Bot_OnInlineQuery(object sender, InlineQueryEventArgs e)
         {
             if (bShouldIgnore)
             {
@@ -274,128 +181,94 @@ namespace CinemaChecker
                 return;
             }
 
-            var movies = checker.GetPosters()
-                .Where(movie => movie.Title.Contains(e.InlineQuery.Query));
+            var msg = e.InlineQuery;
+            bot.SendTextMessageAsync(PrivateChatID, $"{msg.From.Username}: {msg.Query}", disableNotification: true);
 
-            if (movies.Any())
+            var data = msg.Query.Split(new string[] { "," }, StringSplitOptions.RemoveEmptyEntries);
+            if(data.Length >= 1)
             {
-                int ID = 0;
-                var query = movies.Select(movie => new InlineQueryResultPhoto()
+                var cinema = Cinema.CinemaBase.GetCinema(data[0]);
+                if (cinema != null)
                 {
-                    Url = movie.PosterImage,
-                    ThumbUrl = movie.PosterImage,
-                    Caption = movie.Title,
-                    Id = ID++.ToString(),
-                    ReplyMarkup = new InlineKeyboardMarkup
+                    if (data.Length == 1)
                     {
-                        InlineKeyboard = new[]
-                        {
-                            new []
+                        int i = 0;
+                        var sites = await cinema.GetSites();
+                        var buttons = sites.Select(s => new InlineQueryResultArticle()
                             {
-                                new InlineKeyboardButton("Yay", movie.Code),
-                                new InlineKeyboardButton("Nay", string.Format("Nay|{0}", movie.Code))
-                            }
-                        }
+                                Id = i++.ToString(),
+                                Title = s.Name,
+                                Description = $"Site ID: {s.Id}",
+                                InputMessageContent = new InputTextMessageContent()
+                                {
+                                    MessageText = $"{s.Name}"
+                                },
+                                ReplyMarkup = new InlineKeyboardMarkup()
+                                {
+                                    InlineKeyboard = new[]
+                                    {
+                                        new[]
+                                        {
+                                            new InlineKeyboardCallbackButton("Repertoir", $"{data[0]}|{s.Id}|movies"),
+                                            new InlineKeyboardCallbackButton("Upcoming", $"{data[0]}|{s.Id}|upcoming")
+                                        }
+                                    }
+                                }
+                            });
+                        bot.AnswerInlineQueryAsync(msg.Id, buttons.ToArray(), 0, true);
+                        // Site list
                     }
-                });
-                bot.AnswerInlineQueryAsync(e.InlineQuery.Id, query.Take(50).ToArray());
+                    else if (data.Length == 2)
+                    {
+                        var sites = await cinema.GetSites();
+                        if(sites.Where(s => s.Id == data[1]).SingleOrDefault() is Cinema.Site cinemaSite)
+                        {
+                            // show repertoir for the site
+                            int i = 0;
+                            var repertoir = await cinema.GetRepertoir(cinemaSite);
+                            var buttons = repertoir
+                                .Select(movie => new InlineQueryResultPhoto()
+                                {
+                                    Id = i++.ToString(),
+                                    Title = movie.Title,
+                                    Url = movie.PosterImage,
+                                    ThumbUrl = movie.PosterImage,
+                                    Caption = $"{msg.Query}: {movie.Title}"
+                                });
+                            bot.AnswerInlineQueryAsync(msg.Id, buttons.ToArray(), 0, true);
+                        }
+                        else if(data[1] == "upcoming")
+                        {
+
+                        }
+
+                        // Check if has any prefered sites
+                        // if not data[1] == upcoming
+                        //   if yes, try to match data[1] to repertoire and/or upcoming
+                        //   if not, try to match data[1] to sites
+                        //     if success, show repertoire, ignore upcoming
+                        // else check preferences, and show upcoming listings
+                    }
+                    else if (data.Length == 3) // == <end param count>
+                    {
+                        var infos = await cinema.FindSeance(data[1], data[2]);
+                        var res = ButtonHelper.CreateInlineQuery(infos);
+                        bot.AnswerInlineQueryAsync(msg.Id, res.ToArray(), 0);
+                    }
+                }
             }
+            else
+                bot.AnswerInlineQueryAsync(msg.Id, null, 0, switchPmText: "Test", switchPmParameter: "Test2");
         }
 
         private void Bot_OnReceiveError(object sender, ReceiveErrorEventArgs e)
         {
-            bot.SendTextMessageAsync(PrivateChatID, $"Error: {e.ApiRequestException.Message}\n");
-            bShouldIgnore = true;
+            bot.SendTextMessageAsync(PrivateChatID, $"API error: {e.ApiRequestException}\n");
         }
         private void Bot_OnReceiveGeneralError(object sender, ReceiveGeneralErrorEventArgs e)
         {
-            bot.SendTextMessageAsync(PrivateChatID, $"Error: {e.Exception.InnerException?.Message}\n");
+            bot.SendTextMessageAsync(PrivateChatID, $"General error: {e.Exception}\n");
             bShouldIgnore = true;
-        }
-        
-        private void TrySite(ref Message msg)
-        {
-            if (TryTrackSite(msg.Text, out Site found))
-            {
-                AddTrackedChat(msg.Chat.Id, found.Id);
-                bot.SendTextMessageAsync(msg.Chat.Id, "Selected and saved: " + msg.Text,
-                    replyToMessageId: msg.ReplyToMessage != null ? msg.ReplyToMessage.MessageId : 0,
-                    replyMarkup: new ReplyKeyboardRemove());
-            }
-        }
-        private void TryTitle(ref Message msg)
-        {
-            if (!string.IsNullOrEmpty(msg.Text))
-            {
-                AddTrackedTitle(msg.Chat.Id, new Regex(msg.Text));
-                bot.SendTextMessageAsync(msg.Chat.Id, "I'll look for titles matching this regexp from now on: " + msg.Text,
-                    replyToMessageId: msg.ReplyToMessage != null ? msg.ReplyToMessage.MessageId : 0,
-                    replyMarkup: new ReplyKeyboardRemove());
-            }
-        }
-        private bool TryTrackSite(string Name, out Site foundsite)
-        {
-            foundsite = checker.GetSites()
-                .SingleOrDefault(site => site.Name == Name);
-            return foundsite != null;
-        }
-
-        private ChatPreferences GetInitChatSettings(string ChatID)
-        {
-            if (!ChatSettings.ContainsKey(ChatID))
-                ChatSettings.Add(ChatID, new ChatPreferences());
-
-            return GetChatSettings(ChatID);
-        }
-        private ChatPreferences GetChatSettings(string ChatID)
-        {
-            if (ChatSettings.TryGetValue(ChatID, out var Value))
-                return Value;
-
-            return null;
-        }
-        private void AddTrackedChat(ChatId ChatID, long siteId = 0)
-        {
-            var prefs = GetInitChatSettings(ChatID);
-
-            if (siteId != 0)
-                prefs.Add(siteId);
-        }
-        private void AddTrackedTitle(ChatId ChatID, Regex titleRegex = null)
-        {
-            var prefs = GetInitChatSettings(ChatID);
-
-            if (titleRegex != null)
-                prefs.Add(titleRegex);
-
-            Check(ChatID);
-        }
-        private void ShowTrackedSites(ChatId ChatID, int MessageID)
-        {
-            List<InlineKeyboardButton[]> TrackedNames = new List<InlineKeyboardButton[]>();
-            var settings = GetChatSettings(ChatID);
-            if (settings != null)
-            {
-                foreach (var s in checker.GetSites())
-                {
-                    if(settings.Contains(s.Id))
-                    {
-                        TrackedNames.Add(new[]
-                        {
-                            new InlineKeyboardButton(s.Name, s.Id.ToString())
-                        });
-                    }
-                }
-                //TrackedNames.AddRange(from s in checker.GetSites()
-                //                      where settings.Contains(s.Id)
-                //                      select new[]
-                //                      {
-                //                          new InlineKeyboardButton(s.Name, s.Id.ToString())
-                //                      });
-            }
-            TrackedNames.Add(new[] { new InlineKeyboardButton("Go back to settings", "bot_showsettings") });
-            bot.EditMessageTextAsync(ChatID, MessageID, "Those are your registered cinema sites. If you'd like to remove one, just click on it.",
-                replyMarkup: new InlineKeyboardMarkup(TrackedNames.ToArray()));
         }
 
         private void SaveSettings()
@@ -415,58 +288,73 @@ namespace CinemaChecker
             return null;
         }
 
-        public void Check(ChatId RequestId = null)
+        public void Check(object sender, System.Timers.ElapsedEventArgs e)
         {
-            if (RequestId == null)
+            //checker = new CinemaChecker();
+            //if (RequestId == null)
+            //{
+            //    foreach (var settings in ChatSettings)
+            //    {
+            //        var poster = checker.GetPosters()
+            //            .Where(post => settings.Value.Contains(post.Title)).FirstOrDefault();
+
+            //        if (poster != null)
+            //        {
+            //        //    var sites = checker.GetFeatured(poster.Code)
+            //        //        .Where(feat => settings.Value.Contains(feat.Id))
+            //        //        .Select(feat => feat.Name);
+                    
+            //            bot.SendTextMessageAsync(settings.Key, $"Hey, the movie you were waiting on ('{poster.Title}') is now available!");
+            //        }
+            //    }
+            //}
+            //else
+            //{
+            //    var settings = GetChatSettings(RequestId);
+            //    var poster = checker.GetPosters()
+            //        .Where(post => settings.Contains(post.Title)).FirstOrDefault();
+
+            //    if (poster != null)
+            //    {
+            //        var sites = checker.GetFeatured(poster.Code)
+            //            .Where(feat => settings.Contains(feat.Id))
+            //            .Select(feat => feat.Name);
+
+            //        bot.SendTextMessageAsync(RequestId, $"Hey, the movie you were waiting on ('{poster.Title}') is now available!");
+            //    }
+            //}
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+        protected virtual void Dispose(bool disposing)
+        {
+            SaveSettings();
+            bot.StopReceiving();
+            if (disposing)
             {
-                foreach (var settings in ChatSettings)
-                {
-                    var poster = checker.GetPosters()
-                        .Where(post => settings.Value.Contains(post.Title)).FirstOrDefault();
 
-                    if (poster != null)
-                    {
-                    //    var sites = checker.GetFeatured(poster.Code)
-                    //        .Where(feat => settings.Value.Contains(feat.Id))
-                    //        .Select(feat => feat.Name);
-
-                        bot.SendTextMessageAsync(settings.Key, $"Hey, the movie you were waiting on ('{poster.Title}') is now available!");
-                    }
-                }
-            }
-            else
-            {
-                var settings = GetChatSettings(RequestId);
-                var poster = checker.GetPosters()
-                    .Where(post => settings.Contains(post.Title)).FirstOrDefault();
-
-                if (poster != null)
-                {
-                    var sites = checker.GetFeatured(poster.Code)
-                        .Where(feat => settings.Contains(feat.Id))
-                        .Select(feat => feat.Name);
-
-                    bot.SendTextMessageAsync(RequestId, $"Hey, the movie you were waiting on ('{poster.Title}') is now available!");
-                }
             }
         }
 
         private string BotUsername => MeResult.Result.Username;
 
         const long PrivateChatID = 0x28d07dc;
-        const string Bot_SelectPreferedSite = "Select prefered cinema site";
-        const string Bot_TypeMovieRegex = "Type the searched movie name (Regex expected)";
+        const string Bot_SelectSite = "Select cinema site";
+        const string Bot_SelectCinemaSystem = "Select cinema system";
         static bool bShouldIgnore = false;
 
         private InlineKeyboardButton[][] Bot_SettingsInlineKeyboard = new[]
         {
             new[]
             {
-                new InlineKeyboardButton("Registered sites", "bot_showsites")
+                new InlineKeyboardCallbackButton("Registered sites", "bot_showsites")
             },
             new[]
             {
-                new InlineKeyboardButton("Seance preferences", "bot_showprefs")
+                new InlineKeyboardCallbackButton("Seance preferences", "bot_showprefs")
             }
         };
     }

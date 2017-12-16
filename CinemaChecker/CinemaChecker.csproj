@@ -37,7 +37,7 @@
       <HintPath>..\packages\HtmlAgilityPack.1.4.9.5\lib\Net45\HtmlAgilityPack.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\packages\Newtonsoft.Json.10.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <HintPath>..\packages\Newtonsoft.Json.10.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.ComponentModel.Composition" />
@@ -60,11 +60,12 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
-    <Reference Include="Telegram.Bot, Version=12.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Telegram.Bot.12.0.0-beta-03\lib\netstandard1.1\Telegram.Bot.dll</HintPath>
+    <Reference Include="Telegram.Bot, Version=13.2.1.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Telegram.Bot.13.2.1\lib\netstandard1.1\Telegram.Bot.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ButtonHelper.cs" />
     <Compile Include="ChatPreferences.cs" />
     <Compile Include="CinemaChecker.cs" />
     <Compile Include="CinemaCity\Feature.cs" />
@@ -75,6 +76,25 @@
     <Compile Include="CinemaCity\SeanceList.cs" />
     <Compile Include="CinemaCity\SiteFeatures.cs" />
     <Compile Include="CinemaCity\SiteList.cs" />
+    <Compile Include="Cinema\Cinema3D\Seance.cs" />
+    <Compile Include="Cinema\Cinema3D\SeanceInfo.cs" />
+    <Compile Include="Cinema\Cinema3D\Site.cs" />
+    <Compile Include="Cinema\CinemaBase.cs" />
+    <Compile Include="Cinema\Cinema3D\Cinema3D.cs" />
+    <Compile Include="Cinema\Cinema3D\Movie.cs" />
+    <Compile Include="Cinema\Cinema3D\UpcomingMovie.cs" />
+    <Compile Include="Cinema\CinemaCity\CinemaCity.cs" />
+    <Compile Include="Cinema\CinemaCity\Movie.cs" />
+    <Compile Include="Cinema\CinemaCity\Seance.cs" />
+    <Compile Include="Cinema\CinemaCity\SeanceInfo.cs" />
+    <Compile Include="Cinema\CinemaCity\Site.cs" />
+    <Compile Include="Cinema\CinemaCity\UpcomingMovie.cs" />
+    <Compile Include="Cinema\TicketManager.cs" />
+    <Compile Include="Cinema\Movie.cs" />
+    <Compile Include="Cinema\Seance.cs" />
+    <Compile Include="Cinema\SeanceInfo.cs" />
+    <Compile Include="Cinema\Site.cs" />
+    <Compile Include="Cinema\UpcomingMovie.cs" />
     <Compile Include="Extensions.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -93,5 +113,6 @@
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

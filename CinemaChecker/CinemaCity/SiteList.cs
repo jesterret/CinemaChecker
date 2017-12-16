@@ -14,12 +14,12 @@ namespace CinemaChecker.CinemaCity
 
     class SiteList
     {
-        const string SitesUrl = "https://cinema-city.pl/pgm-sites";
+        const string SitesUrl = "https://www.cinema-city.pl/pgm-sites";
 
         internal Task<List<Site>> SiteRequest;
         public SiteList()
         {
-            SiteRequest = Program.GetRawStringAsync(SitesUrl)
+            SiteRequest = Program.GetRawStringAsyncNoCache(SitesUrl)
                 .ContinueWith(t =>
                 {
                     return JsonConvert.DeserializeObject<List<Site>>(t.Result);

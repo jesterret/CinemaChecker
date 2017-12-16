@@ -9,13 +9,13 @@ namespace CinemaChecker.CinemaCity
 {
     class FeaturingSitesList
     {
-        const string FeatureCodeUrl = "https://cinema-city.pl/pgm-feat?code={0}";
-        const string FeatureUrl = "https://cinema-city.pl/pgm-feat";
+        const string FeatureCodeUrl = "https://www.cinema-city.pl/pgm-feat?code={0}&max=365";
+        const string FeatureUrl = "https://www.cinema-city.pl/pgm-feat?max=365";
 
         // Filtered information showing only the selected movie information
         public FeaturingSitesList(string SeanceID)
         {
-            SeanceInfoList = Program.GetRawStringAsync(string.Format(FeatureCodeUrl, SeanceID))
+            SeanceInfoList = Program.GetRawStringAsyncNoCache(string.Format(FeatureCodeUrl, SeanceID))
                 .ContinueWith(t =>
                 {
                     return JsonConvert.DeserializeObject<List<SiteFeatures>>(t.Result);
@@ -24,7 +24,7 @@ namespace CinemaChecker.CinemaCity
         // Full, unfiltered information about every featured movie by every site
         public FeaturingSitesList()
         {
-            SeanceInfoList = Program.GetRawStringAsync(FeatureUrl)
+            SeanceInfoList = Program.GetRawStringAsyncNoCache(FeatureUrl)
                 .ContinueWith(t =>
                 {
                     return JsonConvert.DeserializeObject<List<SiteFeatures>>(t.Result);

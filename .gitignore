@@ -262,3 +262,4 @@ __pycache__/
 
 # Telegram API Token
 Telegram_ApiToken.txt
+/CinemaChecker/bin
