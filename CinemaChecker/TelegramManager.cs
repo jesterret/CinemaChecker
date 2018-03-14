@@ -1,5 +1,4 @@
-﻿using CinemaChecker.CinemaCity;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -11,23 +10,16 @@ using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InlineQueryResults;
 using Telegram.Bot.Types.ReplyMarkups;
 using Newtonsoft.Json;
-using Telegram.Bot.Types.InputMessageContents;
-using Telegram.Bot.Types.InlineKeyboardButtons;
 
 namespace CinemaChecker
 {
     class TelegramManager : IDisposable
     {
         TelegramBotClient bot = new TelegramBotClient(System.IO.File.ReadAllText("Telegram_ApiToken.txt"));
-        Dictionary<string, ChatPreferences> ChatSettings;
-        CinemaChecker checker = new CinemaChecker();
         internal Task<User> MeResult = null;
 
         public TelegramManager()
         {
-            var DeserializedTest = ReadSettings();
-            ChatSettings = DeserializedTest ?? new Dictionary<string, ChatPreferences>();
-            
             bot.OnMessage += Bot_OnMessage;
             bot.OnInlineQuery += Bot_OnInlineQuery;
             bot.OnCallbackQuery += Bot_OnCallbackQuery;
@@ -38,9 +30,9 @@ namespace CinemaChecker
             MeResult = bot.GetMeAsync();
             bot.StartReceiving(new[]
                 {
-                    UpdateType.CallbackQueryUpdate,
-                    UpdateType.InlineQueryUpdate,
-                    UpdateType.MessageUpdate
+                    UpdateType.CallbackQuery,
+                    UpdateType.InlineQuery,
+                    UpdateType.Message
                 });
         }
         ~TelegramManager()
@@ -72,12 +64,12 @@ namespace CinemaChecker
                     {
                         var upcoming = await cinema.GetUpcoming(data[1]);
                         buttons = upcoming
-                            .Select(up => new InlineKeyboardCallbackButton(up.Title, up.Id))
+                            .Select(up => InlineKeyboardButton.WithCallbackData(up.Title, up.Id))
                             .Partition(2)
                             .ToArray();
-                        await bot.EditInlineMessageTextAsync(callback.InlineMessageId, "Here's the list of all upcoming seances");
+                        await bot.EditMessageTextAsync(callback.InlineMessageId, "Here's the list of all upcoming seances");
                     }
-                    await bot.EditInlineMessageReplyMarkupAsync(callback.InlineMessageId, new InlineKeyboardMarkup(buttons));
+                    await bot.EditMessageReplyMarkupAsync(callback.InlineMessageId, new InlineKeyboardMarkup(buttons));
                 }
                 await bot.AnswerCallbackQueryAsync(callback.InlineMessageId);
             }
@@ -88,7 +80,7 @@ namespace CinemaChecker
                     var sites = await Cinema.CinemaBase.GetCinema(data[0]).GetSites();
                     bot.SendTextMessageAsync(callback.From.Id, Bot_SelectSite, replyMarkup: 
                         new InlineKeyboardMarkup(sites
-                                        .Select(s => new InlineKeyboardCallbackButton(s.Name, $"{callback.Data}|{s.Id}"))
+                                        .Select(s => InlineKeyboardButton.WithCallbackData(s.Name, $"{callback.Data}|{s.Id}"))
                                         .Partition(2)
                                         .ToArray()));
                 }
@@ -118,9 +110,9 @@ namespace CinemaChecker
             if (msg.Chat.Type == ChatType.Private)
             {
                 // bot commands handling
-                for (int i = 0; i < msg.Entities.Count; i++)
+                for (int i = 0; i < msg.Entities?.Count(); i++)
                 {
-                    var botcommand = msg.EntityValues[i];
+                    var botcommand = msg.EntityValues.ElementAt(i);
                     if (msg.Entities[i].Type == MessageEntityType.BotCommand)
                     {
                         // Verify whether the command has appended bot username
@@ -143,16 +135,15 @@ namespace CinemaChecker
                             case "/upcoming":
                                 bot.SendTextMessageAsync(msg.Chat.Id, Bot_SelectCinemaSystem, replyMarkup: 
                                                         new InlineKeyboardMarkup(Cinema.CinemaBase.CinemaSystems
-                                                        .Select(s => new InlineKeyboardCallbackButton(s.Value.GetType().Name, s.Key))
+                                                        .Select(s => InlineKeyboardButton.WithCallbackData(s.Value.GetType().Name, s.Key))
                                                         .Partition(2)
                                                         .ToArray()));
                                 break;
 
-                            case "/devbreakquitnow":
+                            case "/hcf":
                                 if (msg.Chat.Id == PrivateChatID)
                                 {
                                     bot.SendTextMessageAsync(PrivateChatID, "Quitting").Wait();
-                                    SaveSettings();
                                     Program.ShouldQuit.Set();
                                 }
                                 break;
@@ -165,7 +156,7 @@ namespace CinemaChecker
                 {
 
                 }
-                else if (msg.Entities.Count == 0)
+                else if (msg.Entities.Count() == 0)
                 {
                     var del = await bot.SendTextMessageAsync(msg.Chat.Id, "Clearing reply keyboard", replyMarkup: new ReplyKeyboardRemove());
                     bot.DeleteMessageAsync(msg.Chat.Id, del.MessageId);
@@ -194,26 +185,18 @@ namespace CinemaChecker
                     {
                         int i = 0;
                         var sites = await cinema.GetSites();
-                        var buttons = sites.Select(s => new InlineQueryResultArticle()
+                        var buttons = sites.Select(s => new InlineQueryResultArticle(i++.ToString(), s.Name, new InputTextMessageContent(s.Name))
                             {
-                                Id = i++.ToString(),
-                                Title = s.Name,
                                 Description = $"Site ID: {s.Id}",
-                                InputMessageContent = new InputTextMessageContent()
+                                ReplyMarkup = new InlineKeyboardMarkup(new[] 
                                 {
-                                    MessageText = $"{s.Name}"
-                                },
-                                ReplyMarkup = new InlineKeyboardMarkup()
-                                {
-                                    InlineKeyboard = new[]
+                                    new[]
                                     {
-                                        new[]
-                                        {
-                                            new InlineKeyboardCallbackButton("Repertoir", $"{data[0]}|{s.Id}|movies"),
-                                            new InlineKeyboardCallbackButton("Upcoming", $"{data[0]}|{s.Id}|upcoming")
-                                        }
+                                        InlineKeyboardButton.WithCallbackData("Repertoir", $"{data[0]}|{s.Id}|movies"),
+                                        InlineKeyboardButton.WithCallbackData("Upcoming", $"{data[0]}|{s.Id}|upcoming")
                                     }
                                 }
+                                )
                             });
                         bot.AnswerInlineQueryAsync(msg.Id, buttons.ToArray(), 0, true);
                         // Site list
@@ -227,12 +210,9 @@ namespace CinemaChecker
                             int i = 0;
                             var repertoir = await cinema.GetRepertoir(cinemaSite);
                             var buttons = repertoir
-                                .Select(movie => new InlineQueryResultPhoto()
+                                .Select(movie => new InlineQueryResultPhoto(i++.ToString(), movie.PosterImage, movie.PosterImage)
                                 {
-                                    Id = i++.ToString(),
                                     Title = movie.Title,
-                                    Url = movie.PosterImage,
-                                    ThumbUrl = movie.PosterImage,
                                     Caption = $"{msg.Query}: {movie.Title}"
                                 });
                             bot.AnswerInlineQueryAsync(msg.Id, buttons.ToArray(), 0, true);
@@ -252,9 +232,24 @@ namespace CinemaChecker
                     else if (data.Length == 3) // == <end param count>
                     {
                         var infos = await cinema.FindSeance(data[1], data[2]);
+                        if (!infos.Any())
+                        {
+                            var movie = (await cinema.GetRepertoir(data[1]))
+                                .Where(x => x.Title.ToUpperInvariant().StartsWith(data[2].ToUpperInvariant()))
+                                .FirstOrDefault();
+                            if(movie != null)
+                            {
+                                infos = await cinema.FindSeance(data[1], movie);
+                            }
+                        }
+
                         var res = ButtonHelper.CreateInlineQuery(infos);
                         bot.AnswerInlineQueryAsync(msg.Id, res.ToArray(), 0);
                     }
+                }
+                else
+                {
+
                 }
             }
             else
@@ -269,23 +264,6 @@ namespace CinemaChecker
         {
             bot.SendTextMessageAsync(PrivateChatID, $"General error: {e.Exception}\n");
             bShouldIgnore = true;
-        }
-
-        private void SaveSettings()
-        {
-            if (ChatSettings != null)
-            {
-                System.IO.File.WriteAllText("Telegram_ChatPreferences.json", JsonConvert.SerializeObject(ChatSettings));
-            }
-        }
-        private Dictionary<string, ChatPreferences> ReadSettings()
-        {
-            if(System.IO.File.Exists("Telegram_ChatPreferences.json"))
-            {
-                return JsonConvert.DeserializeObject<Dictionary<string, ChatPreferences>>(System.IO.File.ReadAllText("Telegram_ChatPreferences.json"));
-            }
-
-            return null;
         }
 
         public void Check(object sender, System.Timers.ElapsedEventArgs e)
@@ -331,12 +309,7 @@ namespace CinemaChecker
         }
         protected virtual void Dispose(bool disposing)
         {
-            SaveSettings();
             bot.StopReceiving();
-            if (disposing)
-            {
-
-            }
         }
 
         private string BotUsername => MeResult.Result.Username;
@@ -350,11 +323,11 @@ namespace CinemaChecker
         {
             new[]
             {
-                new InlineKeyboardCallbackButton("Registered sites", "bot_showsites")
+                InlineKeyboardButton.WithCallbackData("Registered sites", "bot_showsites")
             },
             new[]
             {
-                new InlineKeyboardCallbackButton("Seance preferences", "bot_showprefs")
+                InlineKeyboardButton.WithCallbackData("Seance preferences", "bot_showprefs")
             }
         };
     }

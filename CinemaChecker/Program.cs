@@ -69,8 +69,8 @@ namespace CinemaChecker
         static void Main(string[] args)
         {
             Console.WriteLine(Environment.CurrentDirectory);
-            //_testcc();
-            //_testc3d();
+            _testcc();
+            _testc3d();
             using (var manager = new TelegramManager())
             {
                 ShouldQuit.WaitOne();
